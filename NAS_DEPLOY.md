@@ -49,7 +49,7 @@ server {
 
 ### 方式四：Docker Compose（推荐）
 
-无需手动下载代码，也无需 git。`docker-compose.yml` 会在容器启动时自动从 GitHub 下载仓库文件，提取静态站点并交给 nginx 托管：
+无需手动下载代码，也无需 git。`docker-compose.yml` 首次创建项目时会自动从 GitHub 下载仓库文件，提取静态站点写入 Docker 数据卷，之后启动、重启、重建容器都不会重复下载：
 
 ```bash
 docker compose up -d
@@ -61,17 +61,19 @@ docker compose up -d
 PORT=9090 docker compose up -d
 ```
 
-更新到最新版本：
+更新到最新版本（会强制重新下载）：
 
 ```bash
-docker compose up -d --force-recreate
+FORCE_UPDATE=1 docker compose up -d --force-recreate
 ```
 
 如 GitHub 访问受限，可通过 `PROJECT_TARBALL_URL` 指定加速地址：
 
 ```bash
-PROJECT_TARBALL_URL=https://gh-proxy.com/https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz docker compose up -d
+PROJECT_TARBALL_URL=https://gh-proxy.com/https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz docker compose up -d --force-recreate
 ```
+
+> `shuatibao-init` 是初始化容器，下载完成后会显示为「已停止 / Exited:0」，属于正常现象；实际提供网页服务的是 `shuatibao` 容器。
 
 ## 功能说明
 
