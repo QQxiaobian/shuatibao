@@ -10,7 +10,9 @@ import {
   BookMarked,
   Check,
   ChevronDown,
+  Eye,
 } from 'lucide-react';
+import { scopedStorage } from '@lark-apaas/client-toolkit-lite';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +30,7 @@ import {
 } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { useQuestionBank } from '@/hooks/useQuestionBank';
 import { useQBanks } from '@/hooks/useQBanks';
 import { useWrongBook } from '@/hooks/useWrongBook';
@@ -36,6 +39,9 @@ import { QUESTION_TYPE_LABELS, type QuestionType, type Difficulty } from '@/data
 
 type PracticeMode = 'sequential' | 'random' | 'wrong' | 'favorite' | 'recite';
 type JudgeFilter = 'all' | 'true' | 'false';
+
+/** 背题模式偏好：是否只显示正确选项 */
+const RECITE_ONLY_CORRECT_KEY = 'quiz_bank_recite_only_correct';
 
 interface ModeCardProps {
   mode: PracticeMode;
@@ -96,6 +102,9 @@ export default function PracticePage() {
   const [mode, setMode] = useState<PracticeMode>('sequential');
   const [selectedBankIds, setSelectedBankIds] = useState<string[]>([currentBankId]);
   const [reciteMode, setReciteMode] = useState(false);
+  const [onlyCorrectOptions, setOnlyCorrectOptions] = useState(
+    () => scopedStorage.getItem(RECITE_ONLY_CORRECT_KEY) === '1',
+  );
   const [subject, setSubject] = useState<string>('all');
   const [chapter, setChapter] = useState<string>('all');
   const [type, setType] = useState<string>('all');
@@ -198,8 +207,14 @@ export default function PracticePage() {
       judgeFilter,
       bankIds: selectedBankIds.join(','),
       recite: reciteMode ? '1' : '0',
+      onlyCorrect: reciteMode && onlyCorrectOptions ? '1' : '0',
     });
     navigate(`/quiz/${mode}?${params.toString()}`);
+  };
+
+  const handleOnlyCorrectChange = (checked: boolean) => {
+    setOnlyCorrectOptions(checked);
+    scopedStorage.setItem(RECITE_ONLY_CORRECT_KEY, checked ? '1' : '0');
   };
 
   const selectedBankLabel = useMemo(() => {
@@ -302,7 +317,7 @@ export default function PracticePage() {
         ))}
       </div>
 
-      {/* 背题模式开关 */}
+      {/* 背题模式设置 */}
       <Card className="mb-6">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
@@ -315,17 +330,37 @@ export default function PracticePage() {
                 <div className="text-xs text-muted-foreground">直接显示答案和解析，翻页记忆</div>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setReciteMode((v) => !v)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${reciteMode ? 'bg-primary' : 'bg-input'}`}
-              role="switch"
-              aria-checked={reciteMode}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform ${reciteMode ? 'translate-x-5' : 'translate-x-0'}`}
-              />
-            </button>
+            <Switch
+              checked={reciteMode}
+              onCheckedChange={setReciteMode}
+              aria-label="背题模式"
+            />
+          </div>
+
+          <div
+            className={`mt-4 flex items-center justify-between border-t border-border/60 pt-4 ${
+              reciteMode ? '' : 'opacity-50'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={`flex size-9 items-center justify-center rounded-lg ${
+                  reciteMode ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                <Eye className="size-4.5" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-foreground">只显示正确选项</div>
+                <div className="text-xs text-muted-foreground">隐藏错误选项，专注记忆正确答案</div>
+              </div>
+            </div>
+            <Switch
+              checked={reciteMode && onlyCorrectOptions}
+              onCheckedChange={handleOnlyCorrectChange}
+              disabled={!reciteMode}
+              aria-label="只显示正确选项"
+            />
           </div>
         </CardContent>
       </Card>

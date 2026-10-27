@@ -47,6 +47,26 @@ server {
 3. 文档根目录选择本文件夹
 4. 保存后访问对应地址即可
 
+### 方式四：Docker Compose（推荐）
+
+无需手动下载代码，`docker-compose.yml` 会自动从 GitHub 拉取仓库文件并构建镜像：
+
+```bash
+docker compose up -d --build
+```
+
+访问 `http://<设备IP>:8080`。如需修改端口：
+
+```bash
+PORT=9090 docker compose up -d --build
+```
+
+更新到最新版本：
+
+```bash
+docker compose build --no-cache && docker compose up -d
+```
+
 ## 功能说明
 
 ### 可用功能
@@ -55,7 +75,7 @@ server {
 - 📥 **Excel 导入**：支持 .xlsx/.xls，多 Sheet 合并，选择标题行，自定义列映射
 - 📤 **Excel 导出**：一键导出当前题库为 Excel
 - ✍️ **刷题练习**：顺序 / 随机 / 错题 / 收藏 四种模式
-- 📖 **背题模式**：直接显示答案，用于记忆
+- 📖 **背题模式**：直接显示答案，可开启「只显示正确选项」专注记忆
 - ⭐ **收藏题目**：重点题目标记收藏
 - 📝 **错题本**：自动收集答错的题目
 - 🔍 **搜题**：全文关键词搜索

@@ -47,6 +47,32 @@ server {
 3. 文档根目录选择本文件夹
 4. 保存后访问对应地址即可
 
+### 方式四：Docker Compose（推荐）
+
+无需手动下载代码，也无需 git。`docker-compose.yml` 会在容器启动时自动从 GitHub 下载仓库文件，提取静态站点并交给 nginx 托管：
+
+```bash
+docker compose up -d
+```
+
+访问 `http://<设备IP>:8080`。如需修改端口：
+
+```bash
+PORT=9090 docker compose up -d
+```
+
+更新到最新版本：
+
+```bash
+docker compose up -d --force-recreate
+```
+
+如 GitHub 访问受限，可通过 `PROJECT_TARBALL_URL` 指定加速地址：
+
+```bash
+PROJECT_TARBALL_URL=https://gh-proxy.com/https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz docker compose up -d
+```
+
 ## 功能说明
 
 ### 可用功能
@@ -55,7 +81,7 @@ server {
 - 📥 **Excel 导入**：支持 .xlsx/.xls，多 Sheet 合并，选择标题行，自定义列映射
 - 📤 **Excel 导出**：一键导出当前题库为 Excel
 - ✍️ **刷题练习**：顺序 / 随机 / 错题 / 收藏 四种模式
-- 📖 **背题模式**：直接显示答案，用于记忆
+- 📖 **背题模式**：直接显示答案，可开启「只显示正确选项」专注记忆
 - ⭐ **收藏题目**：重点题目标记收藏
 - 📝 **错题本**：自动收集答错的题目
 - 🔍 **搜题**：全文关键词搜索

@@ -21,6 +21,8 @@ interface QuestionCardProps {
   onToggleFavorite: () => void;
   /** 是否直接显示答案（背题模式） */
   showAnswerImmediately?: boolean;
+  /** 背题模式下是否只显示正确选项 */
+  onlyShowCorrectOptions?: boolean;
 }
 
 export const QuestionCard = memo(function QuestionCard({
@@ -34,6 +36,7 @@ export const QuestionCard = memo(function QuestionCard({
   onAnswer,
   onToggleFavorite,
   showAnswerImmediately = false,
+  onlyShowCorrectOptions = false,
 }: QuestionCardProps) {
   const [shortInput, setShortInput] = useState('');
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
@@ -71,6 +74,22 @@ export const QuestionCard = memo(function QuestionCard({
     }
     return userAnswer === letter;
   };
+
+  // 背题模式「只显示正确选项」：过滤掉错误选项，保留原始字母
+  const optionItems = question.options.map((opt, idx) => ({ opt, letter: LETTERS[idx] }));
+  const correctOptionItems = optionItems.filter(({ letter }) => isOptionCorrect(letter));
+  // 正确答案与选项不匹配（脏数据）时兜底显示全部，避免选项区空白
+  const renderedOptions = onlyShowCorrectOptions
+    ? correctOptionItems.length > 0
+      ? correctOptionItems
+      : optionItems
+    : optionItems;
+
+  // 判断题同样只保留正确答案
+  const judgeValues = onlyShowCorrectOptions
+    ? ['对', '错'].filter((val) => correctAnswers === val)
+    : ['对', '错'];
+  const renderedJudgeValues = judgeValues.length > 0 ? judgeValues : ['对', '错'];
 
   const handleSingleClick = (letter: string) => {
     if (isAnswered) return;
@@ -181,13 +200,12 @@ export const QuestionCard = memo(function QuestionCard({
           )}
         {(question.type === 'single' || question.type === 'multiple') &&
           question.options.length > 0 &&
-          question.options.map((opt, idx) => {
-            const letter = LETTERS[idx];
+          renderedOptions.map(({ opt, letter }) => {
             const selected = isOptionSelected(letter);
             const correct = isOptionCorrect(letter);
             return (
               <button
-                key={idx}
+                key={letter}
                 type="button"
                 onClick={() =>
                   question.type === 'single'
@@ -234,8 +252,8 @@ export const QuestionCard = memo(function QuestionCard({
 
         {/* 判断 */}
         {question.type === 'judge' && (
-          <div className="grid grid-cols-2 gap-3">
-            {['对', '错'].map((val) => {
+          <div className={cn('grid gap-3', renderedJudgeValues.length === 1 ? 'grid-cols-1' : 'grid-cols-2')}>
+            {renderedJudgeValues.map((val) => {
               const selected = userAnswer === val;
               const correct = correctAnswers === val;
               let cls = 'border-border bg-card hover:border-primary/50 hover:bg-muted/50';

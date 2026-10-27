@@ -440,6 +440,7 @@ export default function QuizPage() {
           onAnswer={handleAnswer}
            onToggleFavorite={() => toggleFavorite(currentQuestion.id, currentQuestion.bankId)}
           showAnswerImmediately={isReciteMode}
+          onlyShowCorrectOptions={isReciteMode && searchParams.get('onlyCorrect') === '1'}
         />
       </div>
 
