@@ -24,25 +24,38 @@ services:
       - -c
       - |
         set -e
-        if [ -f /usr/share/nginx/html/.quiz-ready ]; then
+        HTML=/usr/share/nginx/html
+        if [ -f "$$HTML/.quiz-ready" ]; then
           echo "已存在静态文件，跳过下载"
         else
           echo "正在下载刷题系统文件..."
           if [ ! -f /etc/ssl/certs/ca-certificates.crt ]; then
-            apk add --no-cache ca-certificates >/dev/null
+            apk add --no-cache ca-certificates >/dev/null 2>&1 || true
           fi
           rm -rf /tmp/quiz-src && mkdir -p /tmp/quiz-src
-          wget -T 30 -t 3 -O /tmp/quiz.tar.gz "$$TARBALL_URL"
+          URLS="$$TARBALL_URL https://gh-proxy.com/https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz"
+          DOWNLOADED=0
+          for U in $$URLS; do
+            echo "下载源: $$U"
+            if wget -T 30 -t 2 -O /tmp/quiz.tar.gz "$$U"; then
+              DOWNLOADED=1
+              break
+            fi
+          done
+          if [ "$$DOWNLOADED" != "1" ]; then
+            echo "下载失败：请检查容器网络，或在 compose 的 URLS 中换成可访问的镜像地址" >&2
+            exit 1
+          fi
           tar -xzf /tmp/quiz.tar.gz -C /tmp/quiz-src
           SRC=$$(find /tmp/quiz-src -maxdepth 2 -type d -name dist-nas | head -n 1)
           if [ -z "$$SRC" ]; then
             echo "下载包中未找到 dist-nas 目录" >&2
             exit 1
           fi
-          rm -rf /usr/share/nginx/html/*
-          cp -a "$$SRC/." /usr/share/nginx/html/
-          test -f /usr/share/nginx/html/index.html
-          touch /usr/share/nginx/html/.quiz-ready
+          rm -rf "$$HTML"/*
+          cp -a "$$SRC/." "$$HTML/"
+          test -f "$$HTML/index.html"
+          touch "$$HTML/.quiz-ready"
           echo "文件准备完成"
         fi
         exec nginx -g 'daemon off;'
@@ -52,4 +65,4 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 60s
