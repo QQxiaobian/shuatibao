@@ -1,8 +1,9 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { resolveAppUrl } from '@lark-apaas/client-toolkit-lite';
-import { Upload, Download, Plus, Search, BookOpen, AlertCircle, Trash2, Pencil, LayoutGrid, List, Database, Loader2 } from 'lucide-react';
+import { Upload, Download, Plus, Search, BookOpen, AlertCircle, Trash2, Pencil, LayoutGrid, List, Database, Loader2, Star, StarOff, BookMarked, Play } from 'lucide-react';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ import { useWrongBook } from '@/hooks/useWrongBook';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useExams } from '@/hooks/useExams';
 import { QUESTION_TYPE_LABELS, DIFFICULTY_LABELS, type IQuestion, type QuestionType, type Difficulty } from '@/data/questions';
+import { getLatestBankProgress, type ProgressIndexEntry } from '@/lib/progress';
 import QuestionImportDialog from './QuestionImportDialog';
 import QuestionEditDialog from './QuestionEditDialog';
 
@@ -59,6 +61,7 @@ const typeBadgeVariant = (t: QuestionType) => {
 };
 
 export default function LibraryPage() {
+  const navigate = useNavigate();
   const {
     questions,
     allQuestions,
@@ -81,7 +84,7 @@ export default function LibraryPage() {
     DEFAULT_BANK_ID: DEFAULT_ID,
   } = useQBanks();
   const { clearWrongByBankId } = useWrongBook();
-  const { clearFavoritesByBankId } = useFavorites();
+  const { clearFavoritesByBankId, toggleFavorite, isFavorite } = useFavorites();
   const { deleteExamsByBankId } = useExams();
   const [keyword, setKeyword] = useState('');
   const [subject, setSubject] = useState<string>('all');
@@ -101,6 +104,18 @@ export default function LibraryPage() {
   const builtinAbortRef = useRef(false);
 
   const chapterOptions = useMemo(() => getChaptersBySubject(subject), [subject, getChaptersBySubject]);
+
+  // 每个题库最近的刷题 / 背题进度（用于“继续刷题 / 继续背题”）
+  const bankProgress = useMemo(() => {
+    const map: Record<string, { practice: ProgressIndexEntry | null; recite: ProgressIndexEntry | null }> = {};
+    for (const bank of banks) {
+      map[bank.id] = {
+        practice: getLatestBankProgress(bank.id, false),
+        recite: getLatestBankProgress(bank.id, true),
+      };
+    }
+    return map;
+  }, [banks]);
 
   const filtered = useMemo(() => {
     return questions.filter((q) => {
@@ -560,6 +575,7 @@ export default function LibraryPage() {
           {banks.map((bank) => {
             const count = getBankQuestionCount(bank.id);
             const isActive = bank.id === currentBank?.id;
+            const progress = bankProgress[bank.id];
             return (
               <Card
                 key={bank.id}
@@ -601,6 +617,44 @@ export default function LibraryPage() {
                       </div>
                     </div>
                   </div>
+                  {progress && (progress.practice || progress.recite) && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {progress.practice && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(progress.practice!.url);
+                          }}
+                        >
+                          <Play className="mr-1 size-3" />
+                          继续刷题
+                          <span className="ml-1 text-muted-foreground">
+                            {progress.practice.currentIndex + 1}/{progress.practice.total}
+                          </span>
+                        </Button>
+                      )}
+                      {progress.recite && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(progress.recite!.url);
+                          }}
+                        >
+                          <BookMarked className="mr-1 size-3" />
+                          继续背题
+                          <span className="ml-1 text-muted-foreground">
+                            {progress.recite.currentIndex + 1}/{progress.recite.total}
+                          </span>
+                        </Button>
+                      )}
+                    </div>
+                  )}
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>
                       {format(bank.createdAt, 'yyyy/MM/dd', { locale: zhCN })}
@@ -747,6 +801,22 @@ export default function LibraryPage() {
                   <p className="flex-1 min-w-0 text-sm leading-relaxed text-foreground line-clamp-2">
                     {q.question}
                   </p>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0 -mr-1 -mt-1"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFavorite(q.id, q.bankId);
+                    }}
+                    aria-label={isFavorite(q.id) ? '取消收藏' : '收藏'}
+                  >
+                    {isFavorite(q.id) ? (
+                      <Star className="size-4 fill-warning text-warning" />
+                    ) : (
+                      <StarOff className="size-4 text-muted-foreground" />
+                    )}
+                  </Button>
                 </div>
                 <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
                   <span>{q.subject}</span>

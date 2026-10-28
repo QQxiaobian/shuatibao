@@ -11,8 +11,11 @@ import {
   Check,
   ChevronDown,
   Eye,
+  Play,
+  RotateCcw,
 } from 'lucide-react';
 import { scopedStorage } from '@lark-apaas/client-toolkit-lite';
+import { getLatestBankProgress, getProgressPercent } from '@/lib/progress';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -113,6 +116,16 @@ export default function PracticePage() {
   const [bankPopoverOpen, setBankPopoverOpen] = useState(false);
 
   const chapterOptions = useMemo(() => getChaptersBySubject(subject), [subject, getChaptersBySubject]);
+
+  // 当前题库最近的刷题 / 背题进度
+  const continuePractice = useMemo(
+    () => (currentBankId ? getLatestBankProgress(currentBankId, false) : null),
+    [currentBankId],
+  );
+  const continueRecite = useMemo(
+    () => (currentBankId ? getLatestBankProgress(currentBankId, true) : null),
+    [currentBankId],
+  );
 
   // 当 currentBankId 变化（刷新恢复 / 切换题库）时，同步到选中的题库
   // 避免 useState 初始值只在首次渲染生效，导致刷新后还是默认题库
@@ -309,6 +322,57 @@ export default function PracticePage() {
           </Popover>
         </CardContent>
       </Card>
+
+      {/* 继续上次 */}
+      {(continuePractice || continueRecite) && (
+        <Card className="mb-4">
+          <CardContent className="p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <RotateCcw className="size-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground">继续上次</span>
+              <span className="text-xs text-muted-foreground">刷题与背题分别记录</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {continuePractice && (
+                <button
+                  type="button"
+                  onClick={() => navigate(continuePractice.url)}
+                  className="rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    <Play className="size-3.5" />
+                    继续刷题
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    第 {continuePractice.currentIndex + 1}/{continuePractice.total} 题 · 已答 {continuePractice.answered}
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${getProgressPercent(continuePractice)}%` }} />
+                  </div>
+                </button>
+              )}
+              {continueRecite && (
+                <button
+                  type="button"
+                  onClick={() => navigate(continueRecite.url)}
+                  className="rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <div className="flex items-center gap-1.5 text-sm font-medium text-primary">
+                    <BookMarked className="size-3.5" />
+                    继续背题
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    第 {continueRecite.currentIndex + 1}/{continueRecite.total} 题
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${getProgressPercent(continueRecite)}%` }} />
+                  </div>
+                </button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 模式选择 */}
       <div className="mb-6 grid grid-cols-2 gap-3">

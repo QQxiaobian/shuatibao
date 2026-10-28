@@ -57,6 +57,8 @@ export interface IExam {
   perQuestionScores: { single: number; multiple: number; judge: number; short: number };
   /** 总分数 */
   totalScore: number;
+  /** 共享到服务器的试卷 ID（未共享时为空） */
+  sharedId?: string;
   /** 创建时间戳 */
   createdAt: number;
 }
@@ -65,10 +67,16 @@ export interface IExamRecord {
   id: string;
   examId: string;
   examName: string;
+  /** 答题人名称 */
+  participant?: string;
+  /** 对应共享试卷 ID（共享试卷的考试记录） */
+  sharedExamId?: string;
   /** 用户答案 */
   userAnswers: Record<string, string | string[]>;
   /** 得分 */
   score: number;
+  /** 试卷总分 */
+  totalScore?: number;
   /** 正确率 */
   accuracy: number;
   /** 用时（秒） */

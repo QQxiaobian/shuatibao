@@ -18,6 +18,7 @@ export default function App() {
         <Route path="quiz/:mode" element={<QuizPage />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="exam" element={<ExamPage />} />
+        <Route path="exam/shared/:id" element={<ExamQuizPage />} />
         <Route path="exam/:id" element={<ExamQuizPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

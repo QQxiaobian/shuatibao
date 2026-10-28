@@ -1,16 +1,17 @@
 # 刷题小程序 - NAS 自托管版
 
-纯静态、零后端依赖的刷题工具，部署到 NAS / 任何静态文件服务器即可使用。
+前端为纯静态站点，可直接放到 NAS / 任意静态文件服务器；**共享试卷与多人成绩**需要同时运行内置的 Node 后端（Docker Compose 已包含）。
 
 ## 特性
 
-- ✅ **纯静态**：不需要后端、不需要数据库、不需要 Node.js 运行时
+- ✅ **静态优先**：不启动后端也能使用全部本地功能（题库、刷题、背题、收藏、组卷、考试记录）
+- ✅ **共享试卷**：把试卷生成链接发给其他人，所有人成绩汇总在「共享试卷 → 考试记录」（需要后端）
 - ✅ **Hash 路由**：刷新不会 404，不需要 nginx try_files 配置
 - ✅ **相对路径**：部署到任意子目录都能正常加载 JS/CSS
 - ✅ **内置题库**：开箱即用，内置示例题目
 - ✅ **本地存储**：所有数据存在浏览器 localStorage，隐私安全
 - ✅ **Excel 导入**：支持多 Sheet 合并、选择标题行、自定义列映射
-- ✅ **刷题 / 背题**：顺序练习、随机练习、错题本、收藏题目
+- ✅ **刷题 / 背题**：顺序练习、随机练习、错题本、收藏题目，两种模式分别记录进度
 - ✅ **试卷组卷**：智能组卷、在线考试、成绩统计
 - ✅ **搜题功能**：全文关键词搜索
 
@@ -19,6 +20,8 @@
 ### 方式一：直接放到 Web 目录
 
 将本目录所有文件上传到 NAS 的 Web 服务目录（如 nginx 的 `html/quiz/`），浏览器访问对应地址即可。
+
+> 此方式下所有数据都在本机浏览器中，**共享试卷功能不可用**（「共享试卷」页会提示服务未连接）。需要共享时请使用方式四。
 
 ### 方式二：nginx 配置示例
 
@@ -49,23 +52,33 @@ server {
 
 ### 方式四：Docker Compose（推荐）
 
-无需手动下载代码，`docker-compose.yml` 会自动从 GitHub 拉取仓库文件并构建镜像：
+无需手动下载代码，也无需 git。`docker-compose.yml` 首次创建项目时会自动从 GitHub 下载仓库文件，提取静态站点写入 Docker 数据卷，之后启动、重启、重建容器都不会重复下载：
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 访问 `http://<设备IP>:8080`。如需修改端口：
 
 ```bash
-PORT=9090 docker compose up -d --build
+PORT=9090 docker compose up -d
 ```
 
-更新到最新版本：
+更新到最新版本（会强制重新下载）：
 
 ```bash
-docker compose build --no-cache && docker compose up -d
+FORCE_UPDATE=1 docker compose up -d --force-recreate
 ```
+
+如 GitHub 访问受限，可通过 `PROJECT_TARBALL_URL` 指定加速地址：
+
+```bash
+PROJECT_TARBALL_URL=https://gh-proxy.com/https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz docker compose up -d --force-recreate
+```
+
+> `shuatibao-init` 是初始化容器，下载完成后会显示为「已停止 / Exited:0」，属于正常现象；实际提供网页服务的是 `shuatibao` 容器。
+
+该模式下前端与 API 由同一个 Node 服务提供（`server/index.mjs`），共享试卷、考试记录保存在 `quiz-data` 数据卷的 `db.json` 中，重建容器不会丢失。备份时导出该卷即可。
 
 ## 功能说明
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { scopedStorage, logger } from '@lark-apaas/client-toolkit-lite';
-import { Search, X, Clock, Trash2, BookOpen, AlertCircle, Database } from 'lucide-react';
+import { Search, X, Clock, Trash2, BookOpen, AlertCircle, Database, Star, StarOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useQuestionBank } from '@/hooks/useQuestionBank';
 import { useQBanks } from '@/hooks/useQBanks';
+import { useFavorites } from '@/hooks/useFavorites';
 import { QUESTION_TYPE_LABELS, DIFFICULTY_LABELS, type IQuestion, type Difficulty } from '@/data/questions';
 
 const HISTORY_KEY = 'quiz_bank_search_history';
@@ -31,6 +32,7 @@ function highlightText(text: string, keyword: string): React.ReactNode {
 export default function SearchPage() {
   const { questions, allQuestions } = useQuestionBank();
   const { currentBankId, banks, getBankById } = useQBanks();
+  const { toggleFavorite, isFavorite } = useFavorites();
   const [keyword, setKeyword] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [isFocused, setIsFocused] = useState(false);
@@ -293,6 +295,19 @@ export default function SearchPage() {
                   <Badge variant={difficultyBadgeVariant(q.difficulty) as any} className="text-xs">
                     {DIFFICULTY_LABELS[q.difficulty]}
                   </Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="ml-auto size-8"
+                    onClick={() => toggleFavorite(q.id, q.bankId)}
+                    aria-label={isFavorite(q.id) ? '取消收藏' : '收藏'}
+                  >
+                    {isFavorite(q.id) ? (
+                      <Star className="size-4 fill-warning text-warning" />
+                    ) : (
+                      <StarOff className="size-4 text-muted-foreground" />
+                    )}
+                  </Button>
                 </div>
 
                 {/* 题干 */}

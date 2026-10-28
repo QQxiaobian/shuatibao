@@ -72,6 +72,12 @@ export function useExams() {
     [currentBankId],
   );
 
+  const updateExam = useCallback((examId: string, updates: Partial<IExam>) => {
+    setAllExams((prev) =>
+      prev.map((e) => (e.id === examId ? { ...e, ...updates } : e)),
+    );
+  }, []);
+
   const deleteExam = useCallback((examId: string) => {
     setAllExams((prev) => prev.filter((e) => e.id !== examId));
   }, []);
@@ -110,6 +116,7 @@ export function useExams() {
     allExams,
     allRecords,
     createExam,
+    updateExam,
     deleteExam,
     deleteExamsByBankId,
     getExamById,

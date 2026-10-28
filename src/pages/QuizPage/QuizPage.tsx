@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { scopedStorage } from '@lark-apaas/client-toolkit-lite';
-import { ArrowLeft, ArrowRight, Grid3X3, Home, RotateCcw, BookMarked } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Grid3X3, Home, RotateCcw, BookMarked, PenTool } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -27,13 +27,12 @@ import { useQuestionBank } from '@/hooks/useQuestionBank';
 import { useWrongBook } from '@/hooks/useWrongBook';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useQBanks } from '@/hooks/useQBanks';
+import { buildProgressKey, upsertProgressIndex } from '@/lib/progress';
 import { cn } from '@/lib/utils';
 import type { IQuestion, QuestionType, Difficulty } from '@/data/questions';
 import { QuestionCard } from './QuestionCard';
 
 type PracticeMode = 'sequential' | 'random' | 'wrong' | 'favorite' | 'recite';
-
-const PROGRESS_KEY = 'quiz_bank_progress';
 
 interface AnswerRecord {
   userAnswer: string | string[];
@@ -130,11 +129,19 @@ export default function QuizPage() {
     [getFavoritesByBankIds, selectedBankIds],
   );
 
-  // 背题模式下，进度 key 单独存
-  const progressKey = useMemo(() => {
-    const bankKey = selectedBankIds.join('_');
-    return `${PROGRESS_KEY}_${bankKey}_${practiceMode}`;
-  }, [practiceMode, selectedBankIds]);
+  // 刷题与背题分别保存进度
+  const progressKey = useMemo(
+    () => buildProgressKey(selectedBankIds, practiceMode, isReciteMode),
+    [practiceMode, selectedBankIds, isReciteMode],
+  );
+
+  // 恢复进度时可直接跳转的地址（用于题库列表的“继续刷题/背题”）
+  const progressUrl = useMemo(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('recite', isReciteMode ? '1' : '0');
+    const routeMode = practiceMode === 'recite' ? 'sequential' : practiceMode;
+    return `/quiz/${routeMode}?${params.toString()}`;
+  }, [practiceMode, isReciteMode, searchParams]);
 
   // 初始化题目列表：题目加载完成后执行；筛选条件/题库范围变化时重新初始化
   useEffect(() => {
@@ -228,8 +235,19 @@ export default function QuizPage() {
         answers,
       };
       scopedStorage.setItem(progressKey, JSON.stringify(progress));
+      upsertProgressIndex({
+        key: progressKey,
+        url: progressUrl,
+        bankIds: selectedBankIds,
+        mode: practiceMode,
+        isRecite: isReciteMode,
+        currentIndex,
+        total: questionIds.length,
+        answered: isReciteMode ? Math.min(currentIndex + 1, questionIds.length) : Object.keys(answers).length,
+        updatedAt: Date.now(),
+      });
     }
-  }, [loaded, questionIds, currentIndex, answers, practiceMode, filters, progressKey]);
+  }, [loaded, questionIds, currentIndex, answers, practiceMode, filters, progressKey, progressUrl, selectedBankIds, isReciteMode]);
 
   // 答对后 1 秒自动跳到下一题
   useEffect(() => {
@@ -308,6 +326,21 @@ export default function QuizPage() {
     navigate('/practice');
   }, [navigate]);
 
+  // 刷题 / 背题模式切换：写入不同进度，切回来可继续
+  const handleToggleRecite = useCallback(
+    (nextRecite: boolean) => {
+      if (nextRecite === isReciteMode) return;
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('recite', nextRecite ? '1' : '0');
+      if (!nextRecite) params.set('onlyCorrect', '0');
+      const routeMode = practiceMode === 'recite' ? 'sequential' : practiceMode;
+      setShowResumeDialog(false);
+      setLoaded(false);
+      navigate(`/quiz/${routeMode}?${params.toString()}`, { replace: true });
+    },
+    [isReciteMode, practiceMode, searchParams, navigate],
+  );
+
   // 统计
   const stats = useMemo(() => {
     const total = questionIds.length;
@@ -346,15 +379,40 @@ export default function QuizPage() {
         <Button variant="ghost" size="icon" onClick={handleBack} aria-label="返回">
           <ArrowLeft className="size-5" />
         </Button>
-        <div className="flex-1 text-sm text-muted-foreground">
+        <div className="flex-1 min-w-0 text-sm text-muted-foreground">
           {isReciteMode ? (
             <span className="inline-flex items-center gap-1 text-primary">
               <BookMarked className="size-3.5" />
-              背题模式
+              <span className="truncate">背题 · 第 {currentIndex + 1}/{stats.total} 题</span>
             </span>
           ) : (
-            <>已答 {stats.answered}/{stats.total} · 正确率 {stats.accuracy}%</>
+            <span className="truncate">已答 {stats.answered}/{stats.total} · 正确率 {stats.accuracy}%</span>
           )}
+        </div>
+        {/* 刷题 / 背题模式切换 */}
+        <div className="flex shrink-0 items-center rounded-lg border border-border bg-muted/40 p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => handleToggleRecite(false)}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors',
+              !isReciteMode ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
+            )}
+          >
+            <PenTool className="size-3" />
+            刷题
+          </button>
+          <button
+            type="button"
+            onClick={() => handleToggleRecite(true)}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors',
+              isReciteMode ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground',
+            )}
+          >
+            <BookMarked className="size-3" />
+            背题
+          </button>
         </div>
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>

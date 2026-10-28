@@ -1,12 +1,15 @@
 # 刷题系统 Docker Compose 配置
 #
-# 首次创建项目时，init 容器会从 GitHub 下载仓库压缩包，提取 dist-nas 静态站点
-# 并写入 Docker 数据卷；之后启动、重启、重建容器都不会重复下载。
+# 首次创建项目时，init 容器会从 GitHub 下载仓库压缩包，
+# 提取静态站点（dist-nas）和后端服务（server），分别写入 Docker 数据卷；
+# 之后启动、重启、重建容器都不会重复下载。
 #
 # 启动：docker compose up -d
 # 访问：http://localhost:8080
 # 自定义端口：PORT=9090 docker compose up -d
 # 更新到最新版本：FORCE_UPDATE=1 docker compose up -d --force-recreate
+#
+# 数据（共享试卷 / 考试记录）保存在 quiz-data 数据卷中，重建容器不会丢失。
 #
 # GitHub 访问受限时，可通过环境变量替换下载地址（示例使用加速镜像）：
 #   PROJECT_TARBALL_URL=https://gh-proxy.com/https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz docker compose up -d --force-recreate
@@ -14,20 +17,21 @@
 services:
   # 初始化容器：只在首次创建或 FORCE_UPDATE=1 时下载一次
   init:
-    image: nginx:alpine
+    image: alpine:3.20
     container_name: shuatibao-init
     environment:
       TARBALL_URL: ${PROJECT_TARBALL_URL:-https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz}
       FORCE_UPDATE: ${FORCE_UPDATE:-0}
     volumes:
       - quiz-site:/site
+      - quiz-server:/server
     command:
       - /bin/sh
       - -c
       - |
         set -e
-        if [ -f /site/.ready ] && [ "$$FORCE_UPDATE" != "1" ]; then
-          echo "静态文件已存在，跳过下载（更新请设置 FORCE_UPDATE=1）"
+        if [ -f /site/.ready ] && [ -f /server/index.mjs ] && [ "$$FORCE_UPDATE" != "1" ]; then
+          echo "站点与服务已存在，跳过下载（更新请设置 FORCE_UPDATE=1）"
           exit 0
         fi
         echo "开始下载刷题系统文件..."
@@ -45,39 +49,57 @@ services:
           fi
         done
         if [ "$$DOWNLOADED" != "1" ]; then
-          echo "下载失败：请检查容器网络，或在 compose 的 URLS 中换成可访问的镜像地址" >&2
+          echo "下载失败：请检查容器网络，或在 PROJECT_TARBALL_URL 中换成可访问的镜像地址" >&2
           exit 1
         fi
         tar -xzf /tmp/quiz.tar.gz -C /tmp/quiz-src
         SRC=$$(find /tmp/quiz-src -maxdepth 2 -type d -name dist-nas | head -n 1)
+        SRV=$$(find /tmp/quiz-src -maxdepth 3 -type f -path '*/server/index.mjs' | head -n 1)
         if [ -z "$$SRC" ]; then
           echo "下载包中未找到 dist-nas 目录" >&2
+          exit 1
+        fi
+        if [ -z "$$SRV" ]; then
+          echo "下载包中未找到 server/index.mjs" >&2
           exit 1
         fi
         rm -rf /site/* /site/.ready
         cp -a "$$SRC/." /site/
         test -f /site/index.html
         touch /site/.ready
+        mkdir -p /server
+        rm -rf /server/*
+        cp "$$SRV" /server/index.mjs
+        test -f /server/index.mjs
         echo "文件准备完成"
     restart: "no"
 
   shuatibao:
-    image: nginx:alpine
+    image: node:20-alpine
     container_name: shuatibao
+    environment:
+      PORT: "3000"
+      STATIC_DIR: /app/site
+      DATA_DIR: /data
+      NODE_ENV: production
     ports:
-      - "${PORT:-8080}:80"
+      - "${PORT:-8080}:3000"
     volumes:
-      - quiz-site:/usr/share/nginx/html:ro
+      - quiz-site:/app/site:ro
+      - quiz-server:/app/server:ro
+      - quiz-data:/data
     depends_on:
       init:
         condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 10s
 
 volumes:
   quiz-site:
+  quiz-server:
+  quiz-data:

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, ArrowRight, Grid3X3, Clock, Check, X, Trophy, RotateCcw, Home } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Grid3X3, Clock, Check, X, Trophy, RotateCcw, Home, Loader2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,11 +24,27 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useExams } from '@/hooks/useExams';
 import { useQuestionBank } from '@/hooks/useQuestionBank';
 import { useWrongBook } from '@/hooks/useWrongBook';
 import { cn } from '@/lib/utils';
-import { QUESTION_TYPE_LABELS, DIFFICULTY_LABELS, type IQuestion } from '@/data/questions';
+import { QUESTION_TYPE_LABELS, DIFFICULTY_LABELS, type IQuestion, type QuestionType } from '@/data/questions';
+import {
+  ApiUnavailableError,
+  createExamRecord,
+  getSharedExam,
+  type ISharedExam,
+} from '@/lib/examApi';
+import { getParticipantName, setParticipantName } from '@/lib/participant';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
@@ -54,15 +70,63 @@ function checkAnswer(question: IQuestion, userAnswer: string | string[]): boolea
 export default function ExamQuizPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { getExamById, addRecord } = useExams();
   const { getQuestionById } = useQuestionBank();
   const { addWrong } = useWrongBook();
 
-  const exam = id ? getExamById(id) : null;
+  /** /exam/shared/:id 为共享试卷，题目来自服务端快照 */
+  const isShared = location.pathname.startsWith('/exam/shared/');
+  const [sharedExam, setSharedExam] = useState<ISharedExam | null>(null);
+  const [sharedLoading, setSharedLoading] = useState(isShared);
+  const [sharedError, setSharedError] = useState('');
+
+  useEffect(() => {
+    if (!isShared || !id) return;
+    let cancelled = false;
+    setSharedLoading(true);
+    setSharedError('');
+    getSharedExam(id)
+      .then((data) => {
+        if (!cancelled) setSharedExam(data);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setSharedError(
+          err instanceof ApiUnavailableError
+            ? '共享服务未连接，无法加载这张共享试卷'
+            : (err as Error).message,
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setSharedLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, isShared]);
+
+  const localExam = !isShared && id ? getExamById(id) : null;
+  const exam = isShared ? sharedExam : localExam;
+
   const questions = useMemo(() => {
     if (!exam) return [];
-    return exam.questionIds.map((qid) => getQuestionById(qid)).filter(Boolean) as IQuestion[];
-  }, [exam, getQuestionById]);
+    if (isShared) return (exam as ISharedExam).questions || [];
+    return ((exam as NonNullable<typeof localExam>).questionIds
+      .map((qid) => getQuestionById(qid))
+      .filter(Boolean)) as IQuestion[];
+  }, [exam, isShared, getQuestionById]);
+
+  const perQuestionScores = exam?.perQuestionScores;
+
+  const getPoints = useCallback(
+    (type: QuestionType) => {
+      const configured = perQuestionScores?.[type];
+      if (typeof configured === 'number') return configured;
+      return type === 'single' ? 2 : type === 'multiple' ? 4 : type === 'judge' ? 2 : 10;
+    },
+    [perQuestionScores],
+  );
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
@@ -71,7 +135,29 @@ export default function ExamQuizPage() {
   const [submitted, setSubmitted] = useState(false);
   const [duration, setDuration] = useState(0);
   const [shortInput, setShortInput] = useState('');
+  const [participant, setParticipant] = useState(getParticipantName());
+  const [nameOpen, setNameOpen] = useState(false);
+  const [nameInput, setNameInput] = useState(getParticipantName());
+  const [uploading, setUploading] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 通过链接直接进入共享试卷时，先确认姓名，成绩才能记到对应的人
+  useEffect(() => {
+    if (isShared && sharedExam && !participant) {
+      setNameInput('');
+      setNameOpen(true);
+    }
+  }, [isShared, sharedExam, participant]);
+
+  const confirmName = () => {
+    const name = setParticipantName(nameInput);
+    if (!name) {
+      toast.error('请输入你的姓名');
+      return;
+    }
+    setParticipant(name);
+    setNameOpen(false);
+  };
 
   // 计时器
   useEffect(() => {
@@ -171,11 +257,11 @@ export default function ExamQuizPage() {
       }
     });
 
-    // 计算得分（每题分值按类型）
+    // 计算得分（每题分值按类型，优先使用试卷配置）
     let score = 0;
     let totalScore = 0;
     questions.forEach((q) => {
-      const pts = q.type === 'single' ? 2 : q.type === 'multiple' ? 4 : q.type === 'judge' ? 2 : 10;
+      const pts = getPoints(q.type);
       totalScore += pts;
       const userAns = answers[q.id];
       if (userAns !== undefined && checkAnswer(q, userAns)) {
@@ -184,16 +270,44 @@ export default function ExamQuizPage() {
     });
 
     const accuracy = questions.length > 0 ? Math.round((correctCount / questions.length) * 100) : 0;
+    const recordParticipant = participant || (isShared ? '匿名' : '我');
 
-    // 保存记录
+    // 保存本机记录（共享试卷也留一份，便于离线查看）
     addRecord({
-      examId: exam!.id,
+      examId: isShared ? id! : exam!.id,
       examName: exam!.name,
+      participant: recordParticipant,
+      sharedExamId: isShared ? id : undefined,
       userAnswers: answers,
       score,
+      totalScore,
       accuracy,
       duration,
     });
+
+    // 共享试卷：成绩上传到服务端，其他人可查看
+    if (isShared && id) {
+      setUploading(true);
+      createExamRecord({
+        sharedExamId: id,
+        examName: exam!.name,
+        participant: recordParticipant,
+        userAnswers: answers,
+        score,
+        totalScore,
+        accuracy,
+        duration,
+      })
+        .then(() => toast.success('成绩已同步到共享试卷'))
+        .catch((err) => {
+          toast.error(
+            err instanceof ApiUnavailableError
+              ? '共享服务未连接，成绩仅保存在本机'
+              : `成绩同步失败：${(err as Error).message}`,
+          );
+        })
+        .finally(() => setUploading(false));
+    }
 
     setSubmitted(true);
     setShowSubmitConfirm(false);
@@ -249,7 +363,7 @@ export default function ExamQuizPage() {
 
     questions.forEach((q) => {
       typeStats[q.type].total++;
-      const pts = q.type === 'single' ? 2 : q.type === 'multiple' ? 4 : q.type === 'judge' ? 2 : 10;
+      const pts = getPoints(q.type);
       totalScore += pts;
       const userAns = answers[q.id];
       if (userAns !== undefined && checkAnswer(q, userAns)) {
@@ -268,7 +382,27 @@ export default function ExamQuizPage() {
       totalScore,
       typeStats,
     };
-  }, [submitted, questions, answers]);
+  }, [submitted, questions, answers, getPoints]);
+
+  if (isShared && sharedLoading) {
+    return (
+      <div className="mx-auto flex max-w-md items-center justify-center gap-2 px-4 py-20 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+        正在加载共享试卷...
+      </div>
+    );
+  }
+
+  if (isShared && sharedError) {
+    return (
+      <div className="mx-auto max-w-md px-4 py-20 text-center">
+        <p className="text-muted-foreground">{sharedError}</p>
+        <Button className="mt-4" onClick={() => navigate('/exam')}>
+          返回试卷中心
+        </Button>
+      </div>
+    );
+  }
 
   if (!exam) {
     return (
@@ -298,6 +432,23 @@ export default function ExamQuizPage() {
               </div>
               <div className="mt-2 text-sm text-muted-foreground">
                 正确率 {stats.accuracy}% · 用时 {formatTime(duration)}
+              </div>
+              <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <Users className="size-3.5" />
+                答题人：{participant || (isShared ? '匿名' : '我')}
+                {isShared && (
+                  <>
+                    <span>·</span>
+                    {uploading ? (
+                      <span className="flex items-center gap-1">
+                        <Loader2 className="size-3 animate-spin" />
+                        成绩同步中...
+                      </span>
+                    ) : (
+                      <span className="text-primary">共享试卷</span>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           </CardContent>
@@ -386,11 +537,21 @@ export default function ExamQuizPage() {
           </CardContent>
         </Card>
 
-        <div className="mt-6 flex gap-3">
+        <div className="mt-6 flex flex-wrap gap-3">
           <Button variant="outline" className="flex-1" onClick={() => navigate('/exam')}>
             <Home className="mr-2 size-4" />
             返回试卷中心
           </Button>
+          {isShared && (
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => navigate('/exam?tab=shared')}
+            >
+              <Users className="mr-2 size-4" />
+              查看所有人成绩
+            </Button>
+          )}
           <Button className="flex-1" onClick={() => { setSubmitted(false); setAnswers({}); setCurrentIndex(0); setDuration(0); }}>
             <RotateCcw className="mr-2 size-4" />
             重新答题
@@ -658,6 +819,36 @@ export default function ExamQuizPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 共享试卷：进入前填写姓名 */}
+      <Dialog open={nameOpen} onOpenChange={setNameOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>留下你的姓名</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>姓名</Label>
+            <Input
+              placeholder="输入姓名，成绩将显示在共享记录中"
+              value={nameInput}
+              maxLength={30}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && confirmName()}
+            />
+            <p className="text-xs text-muted-foreground">
+              这张试卷由 {sharedExam?.createdBy} 共享，共 {sharedExam?.questionCount} 题
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => navigate('/exam?tab=shared')}>
+              暂不答题
+            </Button>
+            <Button onClick={confirmName} disabled={!nameInput.trim()}>
+              开始答题
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
