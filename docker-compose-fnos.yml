@@ -1,0 +1,43 @@
+# 刷题系统 Docker Compose （飞牛 fnOS 专用）
+# 浏览器访问：http://NAS_IP:8666
+
+services:
+  init:
+    image: alpine:3.20
+    environment:
+      TARBALL_URL: "https://gh-proxy.com/https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz"
+    volumes:
+      - quiz-site:/site
+      - quiz-server:/server
+    command: "sh -c 'set -e; echo 开始下载刷题系统文件; apk add --no-cache ca-certificates >/dev/null 2>&1 || true; rm -rf /tmp/quiz-src && mkdir -p /tmp/quiz-src; URLS=\"$TARBALL_URL https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz\"; DOWNLOADED=0; for U in $URLS; do echo \"下载源: $U\"; if wget -T 30 -t 2 -O /tmp/quiz.tar.gz \"$U\"; then DOWNLOADED=1; break; fi; done; [ \"$DOWNLOADED\" != \"1\" ] && { echo 下载失败，请检查网络; exit 1; }; tar -xzf /tmp/quiz.tar.gz -C /tmp/quiz-src; SRC=$(find /tmp/quiz-src -maxdepth 2 -type d -name dist-nas | head -n 1); SRV=$(find /tmp/quiz-src -maxdepth 3 -type f -path \"*/server/index.mjs\" | head -n 1); [ -z \"$SRC\" ] && { echo 未找到 dist-nas; exit 1; }; [ -z \"$SRV\" ] && { echo 未找到 server/index.mjs; exit 1; }; rm -rf /site/* /site/.ready; cp -a \"$SRC/.\" /site/; cp \"$SRV\" /server/index.mjs; touch /site/.ready; echo 完成'"
+    restart: "no"
+
+  shuatibao:
+    image: node:20-alpine
+    environment:
+      PORT: "3000"
+      STATIC_DIR: "/app/site"
+      DATA_DIR: "/data"
+      NODE_ENV: "production"
+    ports:
+      - "8666:3000"
+    volumes:
+      - quiz-site:/app/site:ro
+      - quiz-server:/app/server:ro
+      - quiz-data:/data
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: "unless-stopped"
+    command: "node /app/server/index.mjs"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(function(r){process.exit(r.ok?0:1)}).catch(function(){process.exit(1)})"]
+      interval: "30s"
+      timeout: "5s"
+      retries: 3
+      start_period: "15s"
+
+volumes:
+  quiz-site:
+  quiz-server:
+  quiz-data:

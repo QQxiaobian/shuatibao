@@ -1,104 +1,26 @@
-# 刷题系统 Docker Compose 配置
-#
-# 首次创建项目时，init 容器会从 GitHub 下载仓库压缩包，
-# 提取静态站点（dist-nas）和后端服务（server），分别写入 Docker 数据卷；
-# 之后启动、重启、重建容器都不会重复下载。
-#
-# 启动：docker compose up -d
-# 访问：http://localhost:8080
-# 自定义端口：PORT=9090 docker compose up -d
-# 更新到最新版本：FORCE_UPDATE=1 docker compose up -d --force-recreate
-#
-# 数据（共享试卷 / 考试记录）保存在 quiz-data 数据卷中，重建容器不会丢失。
-# 静态站点 / server 卷也保留，更新时用 FORCE_UPDATE=1 强制重拉。
-#
-# GitHub 访问受限时，可通过环境变量替换下载地址（示例使用加速镜像）：
-#   PROJECT_TARBALL_URL=https://gh-proxy.com/https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz docker compose up -d --force-recreate
-#
-# ⚠️ 不要写死 container_name：让 Docker Compose 按「项目名-服务名」自动生成，
-#    这样你 NAS 上同时跑多个刷题项目（shuatibao / shuati2 / shuati）也不会撞名。
+# 刷题系统 Docker Compose （飞牛 fnOS 专用）
+# 浏览器访问：http://NAS_IP:8666
 
 services:
-  # 初始化容器：只在首次创建或 FORCE_UPDATE=1 时下载一次
   init:
     image: alpine:3.20
     environment:
-      TARBALL_URL: ${PROJECT_TARBALL_URL:-https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz}
-      FORCE_UPDATE: ${FORCE_UPDATE:-0}
+      TARBALL_URL: "https://gh-proxy.com/https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz"
     volumes:
       - quiz-site:/site
       - quiz-server:/server
-    command:
-      - /bin/sh
-      - -c
-      - |
-        set -e
-        echo "FORCE_UPDATE=$$FORCE_UPDATE"
-        if [ -f /site/.ready ] && [ -f /server/index.mjs ] && [ "$$FORCE_UPDATE" != "1" ]; then
-          echo "站点与服务已存在，跳过下载（更新请设置 FORCE_UPDATE=1）"
-          echo "---- quiz-site 内容 ----"
-          ls -la /site/ | head -20
-          echo "---- quiz-server 内容 ----"
-          ls -la /server/
-          exit 0
-        fi
-        echo "开始下载刷题系统文件..."
-        if [ ! -f /etc/ssl/certs/ca-certificates.crt ]; then
-          apk add --no-cache ca-certificates >/dev/null 2>&1 || true
-        fi
-        rm -rf /tmp/quiz-src && mkdir -p /tmp/quiz-src
-        URLS="$$TARBALL_URL https://gh-proxy.com/https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz"
-        DOWNLOADED=0
-        for U in $$URLS; do
-          echo "下载源: $$U"
-          if wget -T 30 -t 2 -O /tmp/quiz.tar.gz "$$U"; then
-            DOWNLOADED=1
-            break
-          fi
-        done
-        if [ "$$DOWNLOADED" != "1" ]; then
-          echo "下载失败：请检查容器网络，或在 PROJECT_TARBALL_URL 中换成可访问的镜像地址" >&2
-          exit 1
-        fi
-        tar -xzf /tmp/quiz.tar.gz -C /tmp/quiz-src
-        SRC=$$(find /tmp/quiz-src -maxdepth 2 -type d -name dist-nas | head -n 1)
-        SRV=$$(find /tmp/quiz-src -maxdepth 3 -type f -path '*/server/index.mjs' | head -n 1)
-        if [ -z "$$SRC" ]; then
-          echo "下载包中未找到 dist-nas 目录" >&2
-          ls -la /tmp/quiz-src
-          exit 1
-        fi
-        if [ -z "$$SRV" ]; then
-          echo "下载包中未找到 server/index.mjs" >&2
-          find /tmp/quiz-src -maxdepth 4 -type f -name '*.mjs' -o -name '*.js' | head -20
-          exit 1
-        fi
-        echo "提取静态站点: $$SRC"
-        rm -rf /site/* /site/.ready
-        cp -a "$$SRC/." /site/
-        test -f /site/index.html
-        touch /site/.ready
-        echo "提取后端服务: $$SRV"
-        mkdir -p /server
-        rm -rf /server/*
-        cp "$$SRV" /server/index.mjs
-        test -f /server/index.mjs
-        echo "✅ 文件准备完成"
-        echo "---- quiz-site 内容 ----"
-        ls -la /site/ | head -10
-        echo "---- quiz-server 内容 ----"
-        ls -la /server/
+    command: "sh -c 'set -e; echo 开始下载刷题系统文件; apk add --no-cache ca-certificates >/dev/null 2>&1 || true; rm -rf /tmp/quiz-src && mkdir -p /tmp/quiz-src; URLS=\"$TARBALL_URL https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz\"; DOWNLOADED=0; for U in $URLS; do echo \"下载源: $U\"; if wget -T 30 -t 2 -O /tmp/quiz.tar.gz \"$U\"; then DOWNLOADED=1; break; fi; done; [ \"$DOWNLOADED\" != \"1\" ] && { echo 下载失败，请检查网络; exit 1; }; tar -xzf /tmp/quiz.tar.gz -C /tmp/quiz-src; SRC=$(find /tmp/quiz-src -maxdepth 2 -type d -name dist-nas | head -n 1); SRV=$(find /tmp/quiz-src -maxdepth 3 -type f -path \"*/server/index.mjs\" | head -n 1); [ -z \"$SRC\" ] && { echo 未找到 dist-nas; exit 1; }; [ -z \"$SRV\" ] && { echo 未找到 server/index.mjs; exit 1; }; rm -rf /site/* /site/.ready; cp -a \"$SRC/.\" /site/; cp \"$SRV\" /server/index.mjs; touch /site/.ready; echo 完成'"
     restart: "no"
 
   shuatibao:
     image: node:20-alpine
     environment:
       PORT: "3000"
-      STATIC_DIR: /app/site
-      DATA_DIR: /data
-      NODE_ENV: production
+      STATIC_DIR: "/app/site"
+      DATA_DIR: "/data"
+      NODE_ENV: "production"
     ports:
-      - "${PORT:-8080}:3000"
+      - "8666:3000"
     volumes:
       - quiz-site:/app/site:ro
       - quiz-server:/app/server:ro
@@ -106,21 +28,14 @@ services:
     depends_on:
       init:
         condition: service_completed_successfully
-    restart: unless-stopped
-    command: ["node", "/app/server/index.mjs"]
-    # 健康检查用 Node 20 自带 fetch，避开 alpine 里 wget 可能不存在的坑
+    restart: "unless-stopped"
+    command: "node /app/server/index.mjs"
     healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - fetch('http://127.0.0.1:3000/api/health')
-            .then((r) => (r.ok ? process.exit(0) : process.exit(1)))
-            .catch(() => process.exit(1))
-      interval: 30s
-      timeout: 5s
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(function(r){process.exit(r.ok?0:1)}).catch(function(){process.exit(1)})"]
+      interval: "30s"
+      timeout: "5s"
       retries: 3
-      start_period: 15s
+      start_period: "15s"
 
 volumes:
   quiz-site:
