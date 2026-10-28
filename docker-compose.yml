@@ -10,15 +10,18 @@
 # 更新到最新版本：FORCE_UPDATE=1 docker compose up -d --force-recreate
 #
 # 数据（共享试卷 / 考试记录）保存在 quiz-data 数据卷中，重建容器不会丢失。
+# 静态站点 / server 卷也保留，更新时用 FORCE_UPDATE=1 强制重拉。
 #
 # GitHub 访问受限时，可通过环境变量替换下载地址（示例使用加速镜像）：
 #   PROJECT_TARBALL_URL=https://gh-proxy.com/https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz docker compose up -d --force-recreate
+#
+# ⚠️ 不要写死 container_name：让 Docker Compose 按「项目名-服务名」自动生成，
+#    这样你 NAS 上同时跑多个刷题项目（shuatibao / shuati2 / shuati）也不会撞名。
 
 services:
   # 初始化容器：只在首次创建或 FORCE_UPDATE=1 时下载一次
   init:
     image: alpine:3.20
-    container_name: shuatibao-init
     environment:
       TARBALL_URL: ${PROJECT_TARBALL_URL:-https://github.com/QQxiaobian/shuatibao/archive/refs/heads/main.tar.gz}
       FORCE_UPDATE: ${FORCE_UPDATE:-0}
@@ -30,8 +33,13 @@ services:
       - -c
       - |
         set -e
+        echo "FORCE_UPDATE=$$FORCE_UPDATE"
         if [ -f /site/.ready ] && [ -f /server/index.mjs ] && [ "$$FORCE_UPDATE" != "1" ]; then
           echo "站点与服务已存在，跳过下载（更新请设置 FORCE_UPDATE=1）"
+          echo "---- quiz-site 内容 ----"
+          ls -la /site/ | head -20
+          echo "---- quiz-server 内容 ----"
+          ls -la /server/
           exit 0
         fi
         echo "开始下载刷题系统文件..."
@@ -57,26 +65,33 @@ services:
         SRV=$$(find /tmp/quiz-src -maxdepth 3 -type f -path '*/server/index.mjs' | head -n 1)
         if [ -z "$$SRC" ]; then
           echo "下载包中未找到 dist-nas 目录" >&2
+          ls -la /tmp/quiz-src
           exit 1
         fi
         if [ -z "$$SRV" ]; then
           echo "下载包中未找到 server/index.mjs" >&2
+          find /tmp/quiz-src -maxdepth 4 -type f -name '*.mjs' -o -name '*.js' | head -20
           exit 1
         fi
+        echo "提取静态站点: $$SRC"
         rm -rf /site/* /site/.ready
         cp -a "$$SRC/." /site/
         test -f /site/index.html
         touch /site/.ready
+        echo "提取后端服务: $$SRV"
         mkdir -p /server
         rm -rf /server/*
         cp "$$SRV" /server/index.mjs
         test -f /server/index.mjs
-        echo "文件准备完成"
+        echo "✅ 文件准备完成"
+        echo "---- quiz-site 内容 ----"
+        ls -la /site/ | head -10
+        echo "---- quiz-server 内容 ----"
+        ls -la /server/
     restart: "no"
 
   shuatibao:
     image: node:20-alpine
-    container_name: shuatibao
     environment:
       PORT: "3000"
       STATIC_DIR: /app/site
@@ -92,12 +107,20 @@ services:
       init:
         condition: service_completed_successfully
     restart: unless-stopped
+    command: ["node", "/app/server/index.mjs"]
+    # 健康检查用 Node 20 自带 fetch，避开 alpine 里 wget 可能不存在的坑
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1"]
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/api/health')
+            .then((r) => (r.ok ? process.exit(0) : process.exit(1)))
+            .catch(() => process.exit(1))
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
 volumes:
   quiz-site:
